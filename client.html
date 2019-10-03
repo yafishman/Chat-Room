@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+   <head>
+     <!-- <link rel="stylesheet" type="text/css" href="client.css"> -->
+     <title>Chat Room</title>
+     <style>
+     /* overall grid setup */
+     .grid-container {
+       display: grid;
+       grid-template-columns: 200px auto 200px;
+       grid-template-rows: 80px 500px;
+       grid-gap: 10px;
+       padding: 10px;
+       background-color: lightblue;
+     }
+     /* grays out background when modal is open */
+     .daBod{
+       background-color: lightgray;
+     }
+     /* set up for items in grid */
+     .grid-item{
+       background-color: white;
+       padding: 20px;
+     }
+     /* position in grid for login section */
+     .login{
+       grid-column: 1;
+       grid-row: 1;
+     }
+  /* position in grid for room list section */
+     .rooms{
+       grid-column: 1;
+       grid-row: 2;
+       word-wrap: break-word;
+       overflow-y: scroll;
+     }
+  /* position in grid for name of room/lobby section */
+     .name{
+       grid-column: 2;
+       grid-row: 1;
+       text-align: center;
+       word-wrap: break-word;
+       overflow-y: scroll;
+       font-size: 45px;
+     }
+  /* position in grid for users in the current room section */
+     .users{
+       grid-row: 1 / span 2;
+       grid-column: 3;
+       word-wrap: break-word;
+       overflow-y: scroll;
+     }
+  /* position in grid for chat message section */
+     .room{
+       grid-column: 2;
+       grid-row: 2;
+       display: grid;
+       grid-template-rows: auto 40px;
+       word-wrap: break-word;
+       overflow-y: scroll;
+     }
+
+     .input{
+       width: 100px;
+     }
+  /* position in embedded grid for message input section */
+     .sender{
+       grid-row: 2;
+     }
+  /* position in embedded grid for message list section */
+     .log{
+       grid-row: 1;
+       word-wrap: break-word;
+       overflow-y: scroll;
+     }
+
+     /* https://www.w3schools.com/howto/tryit.asp?filename=tryhow_css_modal */
+  /* turns off display for modal boxes when not being used */
+     .modal-container{
+       display: none;
+     }
+  /* turns on display for modal box when being used */
+     .containerOn{
+       display: block;
+       position: fixed;
+       z-index: 1;
+       padding-top: 100px;
+       left: 20%;
+       top: 0;
+       width: 50%;
+       height: 100%;
+       overflow: auto;
+       grid-template-columns: auto 10px;
+     }
+  /* specifies characteristics for items wihin modal */
+     .modal-item{
+       background-color: white;
+        margin: auto;
+        padding: 5px;
+        border: 1px solid black;
+        width: 80%;
+        grid-column: 1;
+     }
+  /* characteristics for close button */
+     .x{
+       width: 20px;
+       text-align: center;
+       grid-column: 2;
+     }
+
+     </style>
+      <script src="/socket.io/socket.io.js"></script>
+      <script>
+      let currentRoom='Lobby';
+      let currentUser;
+      // connecting to the socket
+      let socketio = io.connect();
+      //gets the message and puts it into the html, also creates buttons for liking purposes which is part of the creative portion
+      socketio.on("send_message",function(user,msg) {
+         document.getElementById("chatlog").appendChild(document.createElement("hr"));
+         const string = user + ": " + msg + " ";
+         document.getElementById("chatlog").appendChild(document.createTextNode(string));
+         const button = document.createElement("BUTTON");
+         button.innerHTML = "LIKE  ";
+         button.className = "likeButt";
+         for (let i=0; i<document.getElementById("chatlog").childNodes.length; ++i){
+           if (string==document.getElementById("chatlog").childNodes[i].nodeValue){
+             msg=msg+"1";
+           }
+         }
+         button.id = msg;
+         document.getElementById("chatlog").appendChild(button);
+         button.addEventListener('click', function(){likeMessage(msg)});
+         document.getElementById("message").value='';
+        });
+        //allows a user to like a message (creative portion)
+        socketio.on("like_message", function(msg){
+          const button = document.getElementById(msg);
+          if (!(button.childNodes.length>1)){
+            button.appendChild(document.createTextNode("1"));
+          }
+          else{
+            button.childNodes[1].nodeValue = parseInt(button.childNodes[1].nodeValue)+1;
+          }
+        });
+        //sending private message to other people in the chatroom
+      socketio.on("send_private_message",function(user,msg) {
+         alert("Private Message from "+ user +": "+msg);
+      });
+      //updates which rooms are currently availible and displays them in the bottom left section
+      socketio.on("updateRooms",function(room,roomz,passRooms) {
+        if(currentUser){
+          const newName = document.createTextNode(room);
+          const holder  = document.createElement("LI");
+          const button  = document.createElement("BUTTON");
+          const text  = document.createElement("INPUT");
+          text.setAttribute("type","text");
+
+          if(passRooms.includes(room)) {
+            button.innerHTML = "Join Private Room";
+            text.id=room+"pass";
+            button.className = "joinRoom";
+            button.id = room;
+            holder.appendChild(newName);
+            document.getElementById('listRooms').appendChild(holder);
+            document.getElementById('listRooms').appendChild(button);
+            document.getElementById('listRooms').appendChild(text);
+            button.addEventListener('click', function(){joinPrivRoom(button.id,text.id)});
+          } else {
+            button.innerHTML = "Join"
+            button.className = "joinRoom";
+            button.id = room;
+            holder.appendChild(newName);
+            document.getElementById('listRooms').appendChild(holder);
+            document.getElementById('listRooms').appendChild(button);
+            button.addEventListener('click', function(){selectTheRoom(button.id)});
+          }
+        }
+      });
+      //clears the chat area
+      socketio.on("updateChat",function() {
+        let myNode = document.getElementById("chatlog");
+        while (myNode.firstChild) {
+          myNode.removeChild(myNode.firstChild);
+        }
+      });
+      //loads the rooms availible for the first time in the bottom left section
+      socketio.on("loadRooms",function(roomz,passRooms) {
+        roomz.forEach(function(room) {
+          const newName = document.createTextNode(room);
+          const holder  = document.createElement("LI");
+          const button  = document.createElement("BUTTON");
+          const text  = document.createElement("INPUT");
+          text.setAttribute("type","text");
+
+          if(passRooms.includes(room)) {
+            button.innerHTML = "Join Private Room";
+            text.id=room+"pass";
+            button.className = "joinRoom";
+            button.id = room;
+            holder.appendChild(newName);
+            document.getElementById('listRooms').appendChild(holder);
+            document.getElementById('listRooms').appendChild(button);
+            document.getElementById('listRooms').appendChild(text);
+            button.addEventListener('click', function(){joinPrivRoom(button.id,text.id)});
+          } else {
+            button.innerHTML = "Join"
+            button.className = "joinRoom";
+            button.id = room;
+            holder.appendChild(newName);
+            document.getElementById('listRooms').appendChild(holder);
+            document.getElementById('listRooms').appendChild(button);
+            button.addEventListener('click', function(){selectTheRoom(button.id)});
+          }
+        })
+      });
+      //updates the users in a chatroom in the rightmost section of the UI with buttons to message, and ban 2 types of ways
+      socketio.on("updateUsers",function(room,userz,creator) {
+        document.getElementById("topRoomName").innerHTML = room;
+        let myNode1 = document.getElementById("listUsers");
+        while (myNode1.firstChild) {
+          myNode1.removeChild(myNode1.firstChild);
+        }
+        userz.forEach(function(client) {
+
+          const newName = document.createTextNode(client);
+          const holder  = document.createElement("LI");
+          const buttonMsg  = document.createElement("BUTTON");
+          const text  = document.createElement("INPUT");
+          text.setAttribute("type","text");
+          text.id=client+"text";
+          buttonMsg.innerHTML = "Private MSG"
+          buttonMsg.className = "privMsg";
+          buttonMsg.id = client+"msg";
+          holder.appendChild(newName);
+          document.getElementById('listUsers').appendChild(holder);
+          document.getElementById('listUsers').appendChild(text);
+          document.getElementById('listUsers').appendChild(buttonMsg);
+          buttonMsg.addEventListener('click', function(){sendPrivateMessage(buttonMsg.id,text.id)});
+          if(currentUser==creator){
+            const button  = document.createElement("BUTTON");
+            button.innerHTML = "Temp Ban"
+            button.className = "tempBan";
+            button.id = client;
+            const buttonPerm  = document.createElement("BUTTON");
+            buttonPerm.innerHTML = "Perm Ban"
+            buttonPerm.className = "permBan";
+            buttonPerm.id = client+"perm";
+            document.getElementById('listUsers').appendChild(button);
+            button.addEventListener('click', function(){tempBan(button.id)});
+            document.getElementById('listUsers').appendChild(buttonPerm);
+            buttonPerm.addEventListener('click', function(){permBan(buttonPerm.id)});
+          }
+        });
+      });
+      //runs when user enters a room
+      socketio.on("join_Room",function(room) {
+        document.getElementById("topRoomName").innerHTML = room;
+        currentRoom = room;
+        let chatNode = document.getElementById("chatlog");
+        while (chatNode.firstChild) {
+          chatNode.removeChild(chatNode.firstChild);
+        }
+      });
+      //alert if a username is taken by someone else
+      socketio.on("user_taken",function(username) {
+        alert("Username Taken");
+      });
+      //removes the add nickname nodes and displays the current users nickname
+      socketio.on("login",function(username) {
+        currentUser = username;
+        let nodes = document.getElementById("logIn");
+        while (nodes.firstChild) {
+          nodes.removeChild(nodes.firstChild);
+        }
+        const newName = document.createTextNode("Logged in as: "+ username);
+        nodes.appendChild(newName);
+        //adds event listeners for buttons
+        document.getElementById('makePubRoom').removeEventListener('click', nahFam);
+        document.getElementById('makePrivRoom').removeEventListener('click', nahFam);
+        document.getElementById('sendMessage').removeEventListener('click', nahFam);
+        document.getElementById('makePubRoom').addEventListener('click', function(){addRoom("setPub")});
+        document.getElementById('makePrivRoom').addEventListener('click', function(){addRoom("setPriv")});
+        document.getElementById('sendMessage').addEventListener('click', sendMessage);
+      });
+      //temporarily bans someone but allows them to join back in (only allowed for owner)
+      socketio.on("ban",function(user,room) {
+        alert("You've been permanently banned from "+room);
+        currentRoom='Lobby';
+        document.getElementById("topRoomName").innerHTML = currentRoom;
+        let myNode2 = document.getElementById("listUsers");
+        while (myNode2.firstChild) {
+          myNode2.removeChild(myNode2.firstChild);
+        }
+        let textNode = document.getElementById("chatlog");
+        while (textNode.firstChild) {
+          textNode.removeChild(textNode.firstChild);
+        }
+        socketio.emit("leave_room", user,room);
+      });
+      //kicks someone and does not allow them to join back in (only allowed for owner)
+      socketio.on("kick",function(user,room) {
+        alert("You've been temporarily banned from "+room);
+        currentRoom='Lobby';
+        document.getElementById("topRoomName").innerHTML = currentRoom;
+        let myNode3 = document.getElementById("listUsers");
+        while (myNode3.firstChild) {
+          myNode3.removeChild(myNode3.firstChild);
+        }
+        let txtNode1 = document.getElementById("chatlog");
+        while (txtNode1.firstChild) {
+          txtNode1.removeChild(txtNode1.firstChild);
+        }
+        socketio.emit("leave_room", user,room);
+      });
+      //alert if password for private room is wrong
+      socketio.on("incorrect",function() {
+        alert("Incorrect password");
+      });
+      //alert if a user tries to interact with the service before inputting a username
+      function nahFam() {
+        alert("Please log in")
+      }
+      //sets a users name to be the name they inputted
+      function makeName() {
+        const username = document.getElementById("nickname").value;
+        if(document.getElementById("nickname").value=="") {
+          alert("Please enter a valid username");
+        } else {
+          socketio.emit("add_user", username);
+        }
+      }
+      //passes information to socket with a user joins a private room
+      function joinPrivRoom(room,passText) {
+        const pass = document.getElementById(passText).value;
+        socketio.emit("join_private_room", room,pass,currentUser,currentRoom);
+      }
+      //passes info to socket when user posts a message
+      function sendMessage(){
+         let msg = document.getElementById("message").value;
+         socketio.emit("send_message", msg,currentUser,currentRoom);
+      }
+      //passes info to socket when a user likes a message
+      function likeMessage(msg){
+         socketio.emit("like_message", msg,currentUser,currentRoom);
+      }
+      //passes info to socket for a private message
+      function sendPrivateMessage(userTo,txt){
+        if(document.getElementById(txt).value) {
+         const msg = document.getElementById(txt).value;
+         const user = userTo.substring(0, userTo.length - 3);
+         socketio.emit("send_private_message", msg,currentUser,user);
+       }
+      }
+      //passes info to socket for a temporary kick
+      function tempBan(userTo){
+        socketio.emit("temp_ban", currentRoom,userTo);
+      }
+      //passes info to socket for a permanent ban
+      function permBan(userTo){
+        const user = userTo.substring(0, userTo.length - 4);
+        socketio.emit("perm_ban", currentRoom,user);
+      }
+
+      </script>
+   </head>
+  <body id = "bod">
+    <!-- modal for public room entry -->
+  <div class="modal-container" id = "pub">
+  <input class="modal-item x" type="submit" id="closePub" value="X"/>
+  <div class="modal-item popupPub" id="Public">Create Public Room: <br>
+    Name: <input type="text" id="pubName"/> <br>
+    <input type="submit" id="setPub" value="Finish"/>
+  </div>
+  </div>
+<!-- modal for private room entry -->
+  <div class="modal-container" id = "priv">
+  <input class="modal-item x" type="submit" id="closePriv" value="X"/>
+  <div class="modal-item popupPriv" id="private">Create Private Room: <br>
+    Name: <input type="text" id="privName"/> <br>
+    Password: <input type="text" id="privPass"/> <br>
+    <input type="submit" id="setPriv" value="Finish"/>
+  </div>
+  </div>
+<!-- grid for overall UI -->
+  <div class="grid-container">
+  <div class="grid-item login" id="logIn">Nickname:
+    <input type="text" id="nickname"/>
+    <input type="submit" id="makeName" value="Log In To See Chat Rooms"/>
+  </div>
+  <div class="grid-item rooms" id="listRooms">Rooms:
+    <input type="submit" id="makePubRoom" value="Create Public Room"/>
+    <input type="submit" id="makePrivRoom" value="Create Private Room"/>
+  </div>
+  <div class="grid-item name" id="topRoomName">Lobby</div>
+  <div class="grid-item room" id="theRom">
+    <div id="chatlog"></div>
+    <div class="grid-item sender" id="theRoom">
+    <input type="text" id="message" style="width:500px;"/>
+    <input type="submit" id="sendMessage" value="Send"/>
+    </div>
+
+  </div>
+  <div class="grid-item users" id="listUsers">Users:</div>
+</div>
+<!-- button to save for creative portion -->
+<input type="submit" id="save" value="Save Chat" />
+
+
+   <script>
+   //adds event listeners for buttons
+document.getElementById('closePub').addEventListener('click', close);
+document.getElementById('closePriv').addEventListener('click', close);
+document.getElementById('makeName').addEventListener('click', makeName);
+document.getElementById('setPub').addEventListener('click', makePublic);
+document.getElementById('setPriv').addEventListener('click', makePrivate);
+document.getElementById('makePubRoom').addEventListener('click', nahFam);
+document.getElementById('makePrivRoom').addEventListener('click', nahFam);
+document.getElementById('sendMessage').addEventListener('click', nahFam);
+document.getElementById('save').addEventListener('click', saveChat);
+//creative portion that allows a user to save the contents of a chat by putting each message on a new line in a new window and automatically allowing them to save the file as a PDF
+function saveChat(){
+  let holder = [];
+  for (let i=0; i<document.getElementById("chatlog").childNodes.length; ++i){
+    if ((document.getElementById("chatlog").childNodes[i].tagName!="HR")&&(document.getElementById("chatlog").childNodes[i].nodeValue!==null)){
+      holder.push(document.getElementById("chatlog").childNodes[i].nodeValue);
+    }
+  }
+  let myWindow = window.open("",'width=500,height=500');
+    myWindow.document.write("Chat Name: " + document.getElementById("topRoomName").innerHTML);
+    myWindow.document.write("<br>");
+    myWindow.document.write("<br>");
+    myWindow.document.write("Your Name: " + currentUser);
+    myWindow.document.write("<br>");
+    myWindow.document.write("<br>");
+    myWindow.document.write("<br>");
+  for (let j=0; j<holder.length; ++j){
+    myWindow.document.write(holder[j]);
+    myWindow.document.write("<br>");
+  }
+  myWindow.document.close();
+  myWindow.focus();
+  myWindow.print();
+}
+//passes info to socket to join a public room
+function selectTheRoom(nextRoom){
+  if(nextRoom != currentRoom) {
+    socketio.emit("join_room", nextRoom,currentUser,currentRoom);
+  }
+}
+//called when a user clicks to create a room and determines which type of room for which modal box to display
+function addRoom(b){
+  if (b=="setPub"){
+    document.getElementById("pub").className = "containerOn";
+    document.getElementById("bod").className = "daBod";
+  }
+  if (b=="setPriv"){
+    document.getElementById("priv").className = "containerOn";
+    document.getElementById("bod").className = "daBod";
+  }
+}
+//closes the modal boxes
+function close(){
+  document.getElementById("pub").className = "modal-container";
+  document.getElementById("priv").className = "modal-container";
+  document.getElementById("bod").className = "";
+}
+//passes info to the socket when a user creates a public room and closes modal
+function makePublic(){
+  if (!document.getElementById('pubName').value==""){
+    close();
+    document.getElementById("topRoomName").innerHTML = currentRoom;
+    const oldRoom = currentRoom;
+    currentRoom = document.getElementById('pubName').value;
+    socketio.emit("create_room", currentRoom, currentUser,oldRoom);
+    }
+  else{
+    alert("Enter A Valid Room Name");
+  }
+}
+//passes info to the socket when a user creates a private room and closes modal
+function makePrivate(){
+  if ((!document.getElementById('privName').value=="")&&(!document.getElementById('privPass').value=="")){
+    close();
+    const pass = document.getElementById('privPass').value;
+    const oldRoom = currentRoom;
+    currentRoom = document.getElementById('privName').value;
+    socketio.emit("create_private", currentRoom, currentUser,pass,oldRoom);
+
+  }
+  else{
+    alert("Enter A Valid Room Name and Password");
+  }
+}
+   </script>
+   </body>
+</html>
